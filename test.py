@@ -13,8 +13,8 @@ TEMPERATURE = 0.01 # default
 print('加载数据 loading dataset:')
 ds = load_dataset("Maxwell-Jia/AIME_2024")
 print('加载模型 loading model:')
-tokenizer = AutoTokenizer.from_pretrained("./DeepSeek-R1-Distill-Qwen-1.5B")
-model = AutoModelForCausalLM.from_pretrained("./DeepSeek-R1-Distill-Qwen-1.5B")
+tokenizer = AutoTokenizer.from_pretrained("deepseekai/DeepSeek-R1-Distill-Qwen-1.5B")
+model = AutoModelForCausalLM.from_pretrained("deepseekai/DeepSeek-R1-Distill-Qwen-1.5B")
 
 # 调用模型chat，传入string，model，tokenizer
 def chat(message,model,tokenizer):
