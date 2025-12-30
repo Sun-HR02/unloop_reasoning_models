@@ -4,17 +4,32 @@ from tqdm import tqdm
 import re
 import json
 import os
+import torch
 from datetime import datetime
 from collections import Counter
 
-MAX_NEW_TOKENS = 20000
+MAX_NEW_TOKENS = 20000  
 TEMPERATURE = 0.01 # default
 
-print('加载数据 loading dataset:')
-ds = load_dataset("Maxwell-Jia/AIME_2024")
+# 检测可用设备
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"使用设备: {device}")
+
+print('加载数据 loading datasets:')
+ds_2024 = load_dataset("Maxwell-Jia/AIME_2024")
+ds_2025 = load_dataset("math-ai/aime25")
+print(f"AIME 2024 数据集大小: {len(ds_2024['train'])}")
+print(f"AIME 2025 数据集大小: {len(ds_2025['test'])}")
 print('加载模型 loading model:')
-tokenizer = AutoTokenizer.from_pretrained("deepseekai/DeepSeek-R1-Distill-Qwen-1.5B")
-model = AutoModelForCausalLM.from_pretrained("deepseekai/DeepSeek-R1-Distill-Qwen-1.5B")
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Thinking-2507")
+model = AutoModelForCausalLM.from_pretrained(
+    "Qwen/Qwen3-4B-Thinking-2507",
+    torch_dtype=torch.float16 if device == "cuda" else torch.float32,  # GPU使用半精度
+    device_map="auto" if device == "cuda" else None,  # 自动分配GPU
+)
+
+if device == "cpu":
+    print("警告: 未检测到GPU，使用CPU运行会很慢！")
 
 # 调用模型chat，传入string，model，tokenizer
 def chat(message,model,tokenizer):
@@ -34,8 +49,15 @@ def chat(message,model,tokenizer):
         return_tensors="pt",
     ).to(model.device)
 
-    outputs = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS, temperature=TEMPERATURE)
-    return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:])
+    outputs = model.generate(
+        **inputs, 
+        max_new_tokens=MAX_NEW_TOKENS, 
+        temperature=TEMPERATURE,
+        do_sample=True if TEMPERATURE > 0 else False,
+        pad_token_id=tokenizer.eos_token_id,
+        use_cache=True,  # 启用KV缓存加速
+    )
+    return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
 
 # 提取think内容并返回相关信息
 def extract_think_info(output):
@@ -203,9 +225,29 @@ think_lengths = []  # 记录每次的think长度
 truncated_count = 0  # 被截断的think数量
 all_results = []  # 保存所有结果
 
+# 合并两个数据集
+combined_dataset = []
+for item in ds_2024['train']:
+    combined_dataset.append({
+        'problem': item['Problem'],
+        'answer': item['Answer'],
+        'source': 'AIME_2024'
+    })
+for item in ds_2025['test']:
+    combined_dataset.append({
+        'problem': item['problem'],
+        'answer': item['answer'],
+        'source': 'AIME_2025'
+    })
+
+print(f"\n合并后总数据量: {len(combined_dataset)}")
+print(f"开始推理...\n")
+
 with open(results_file, 'w', encoding='utf-8') as f:
-    for item in tqdm(ds['train']):
-        problem = item['Problem']
+    for item in tqdm(combined_dataset, desc="Processing"):
+        problem = item['problem']
+        source = item['source']
+        answer = item['answer']
         response = chat(problem, model, tokenizer)
         total_count += 1
         
@@ -224,7 +266,9 @@ with open(results_file, 'w', encoding='utf-8') as f:
         # 准备保存的结果
         result_item = {
             'index': total_count,
+            'source': source,
             'problem': problem,
+            'answer': answer,
             'response': response,
             'think_info': think_info,
             'is_loop': is_looped,
@@ -243,11 +287,29 @@ with open(results_file, 'w', encoding='utf-8') as f:
 
         print("-" * 50)
 
+# 按数据源统计
+aime_2024_count = sum(1 for r in all_results if r.get('source') == 'AIME_2024')
+aime_2025_count = sum(1 for r in all_results if r.get('source') == 'AIME_2025')
+aime_2024_loop = sum(1 for r in all_results if r.get('source') == 'AIME_2024' and r.get('is_loop'))
+aime_2025_loop = sum(1 for r in all_results if r.get('source') == 'AIME_2025' and r.get('is_loop'))
+
 # 计算统计信息
 stats = {
     'total_count': total_count,
     'loop_count': loop_count,
     'loop_percentage': loop_count/total_count*100 if total_count > 0 else 0,
+    'dataset_stats': {
+        'aime_2024': {
+            'count': aime_2024_count,
+            'loop_count': aime_2024_loop,
+            'loop_percentage': aime_2024_loop/aime_2024_count*100 if aime_2024_count > 0 else 0
+        },
+        'aime_2025': {
+            'count': aime_2025_count,
+            'loop_count': aime_2025_loop,
+            'loop_percentage': aime_2025_loop/aime_2025_count*100 if aime_2025_count > 0 else 0
+        }
+    },
     'think_stats': {
         'total_length': sum(think_lengths),
         'average_length': sum(think_lengths)/len(think_lengths) if think_lengths else 0,
@@ -274,6 +336,10 @@ print(f"统计结果:")
 print(f"总处理数量: {total_count}")
 print(f"循环生成次数: {loop_count}")
 print(f"循环生成比例: {loop_count/total_count*100:.2f}%" if total_count > 0 else "循环生成比例: N/A")
+print("-" * 50)
+print(f"数据集分布:")
+print(f"AIME 2024: {aime_2024_count} 条 (循环: {aime_2024_loop}, {aime_2024_loop/aime_2024_count*100:.2f}%)" if aime_2024_count > 0 else "AIME 2024: 0 条")
+print(f"AIME 2025: {aime_2025_count} 条 (循环: {aime_2025_loop}, {aime_2025_loop/aime_2025_count*100:.2f}%)" if aime_2025_count > 0 else "AIME 2025: 0 条")
 print("-" * 50)
 print(f"Think长度统计:")
 print(f"总think长度: {sum(think_lengths)}")
