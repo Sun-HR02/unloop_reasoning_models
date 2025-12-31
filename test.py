@@ -7,6 +7,7 @@ import os
 import torch
 from datetime import datetime
 from collections import Counter
+from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
 
 MAX_NEW_TOKENS = 20000  
 TEMPERATURE = 0.01 # default
@@ -21,9 +22,14 @@ ds_2025 = load_dataset("math-ai/aime25")
 print(f"AIME 2024 数据集大小: {len(ds_2024['train'])}")
 print(f"AIME 2025 数据集大小: {len(ds_2025['test'])}")
 print('加载模型 loading model:')
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-4B-Thinking-2507")
+model_name = 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B'
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+# 量化模型加载
+# model = AutoGPTQForCausalLM.from_quantized(quantized_model_dir, device="cuda:0", use_triton=False)
+
+# pretrain 模型加载
 model = AutoModelForCausalLM.from_pretrained(
-    "Qwen/Qwen3-4B-Thinking-2507",
+    model_name,
     torch_dtype=torch.float16 if device == "cuda" else torch.float32,  # GPU使用半精度
     device_map="auto" if device == "cuda" else None,  # 自动分配GPU
 )
