@@ -1,0 +1,31 @@
+{
+  "total_count": 60,
+  "loop_count": 39,
+  "loop_percentage": 65.0,
+  "dataset_stats": {
+    "aime_2024": {
+      "count": 30,
+      "loop_count": 18,
+      "loop_percentage": 60.0
+    },
+    "aime_2025": {
+      "count": 30,
+      "loop_count": 21,
+      "loop_percentage": 70.0
+    }
+  },
+  "think_stats": {
+    "total_length": 715621,
+    "average_length": 11927.016666666666,
+    "max_length": 62461,
+    "min_length": 0,
+    "no_think_count": 21,
+    "truncated_count": 0,
+    "truncated_percentage": 0.0
+  },
+  "config": {
+    "max_new_tokens": 20000,
+    "temperature": 0.01
+  },
+  "timestamp": "2026-01-05T09:47:04.129374"
+}
