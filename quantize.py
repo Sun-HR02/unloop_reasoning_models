@@ -2,9 +2,11 @@ from datasets import load_dataset
 from gptqmodel import GPTQModel, QuantizeConfig
 
 model_name = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B'
+QUANTIZE_METHOD = 'gptq'
 
 pretrained_model_dir = model_name
 quantized_model_dir = 'quantized_model/'+model_name.split('/')[-1] + f'_{QUANTIZE_METHOD}_quantized'
+
 
 calibration_dataset = load_dataset(
     "allenai/c4",
