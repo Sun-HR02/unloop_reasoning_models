@@ -7,7 +7,7 @@ import os
 import torch
 from datetime import datetime
 from collections import Counter
-from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
+from gptqmodel import GPTQModel, QuantizeConfig
 
 MAX_NEW_TOKENS = 20000  
 TEMPERATURE = 0.01 # default
@@ -22,18 +22,19 @@ ds_2025 = load_dataset("math-ai/aime25")
 print(f"AIME 2024 数据集大小: {len(ds_2024['train'])}")
 print(f"AIME 2025 数据集大小: {len(ds_2025['test'])}")
 print('加载模型 loading model:')
-model_name = 'casperhansen/deepseek-r1-distill-qwen-32b-awq'
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+model_name = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B'
+
+# # pretrain 模型加载
+# tokenizer = AutoTokenizer.from_pretrained(model_name)
+# model = AutoModelForCausalLM.from_pretrained(
+#     model_name,
+#     torch_dtype=torch.float16 if device == "cuda" else torch.float32,  # GPU使用半精度
+#     device_map="auto" if device == "cuda" else None,  # 自动分配GPU
+# )
+
 # 量化模型加载
-# model = AutoGPTQForCausalLM.from_quantized(quantized_model_dir, device="cuda:0", use_triton=False)
-
-# pretrain 模型加载
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16 if device == "cuda" else torch.float32,  # GPU使用半精度
-    device_map="auto" if device == "cuda" else None,  # 自动分配GPU
-)
-
+c = 'quantized_model/'+model_name.split('/')[-1] + f'_{QUANTIZE_METHOD}_quantized'
+model = GPTQModel.load(quantized_model_dir)
 
 if device == "cpu":
     print("警告: 未检测到GPU，使用CPU运行会很慢！")
@@ -66,7 +67,9 @@ def chat(message,model,tokenizer):
     )
     return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
 
-
+def chat_quantized(message,model):
+    result = model.generate(message)[0] # tokens
+    return model.tokenizer.decode(result)
 
 # 提取think内容并返回相关信息
 def extract_think_info(output):
@@ -221,8 +224,8 @@ os.makedirs(results_dir, exist_ok=True)
 
 # 生成带时间戳的文件名
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-results_file = os.path.join(results_dir, f"inference_results_{timestamp}.jsonl")
-stats_file = os.path.join(results_dir, f"statistics_{model_name}_{timestamp}.json")
+results_file = os.path.join(results_dir, f"inference_results_{model_name.split('/')[-1]}_{timestamp}.jsonl")
+stats_file = os.path.join(results_dir, f"statistics_{model_name.split('/')[-1]}_{timestamp}.json")
 
 print(f"结果将保存到: {results_file}")
 print(f"统计信息将保存到: {stats_file}")
@@ -257,7 +260,8 @@ with open(results_file, 'w', encoding='utf-8') as f:
         problem = item['problem']
         source = item['source']
         answer = item['answer']
-        response = chat(problem, model, tokenizer)
+        # response = chat(problem, model, tokenizer)
+        response = chat_quantized(problem, model)
 
         total_count += 1
         
