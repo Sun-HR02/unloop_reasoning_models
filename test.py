@@ -33,7 +33,7 @@ model_name = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B'
 # )
 
 # 量化模型加载
-c = 'quantized_model/'+model_name.split('/')[-1] + f'_{QUANTIZE_METHOD}_quantized'
+quantized_model_dir = 'quantized_model/'+model_name.split('/')[-1] + f'_{QUANTIZE_METHOD}_quantized'
 model = GPTQModel.load(quantized_model_dir)
 
 if device == "cpu":
@@ -68,7 +68,9 @@ def chat(message,model,tokenizer):
     return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
 
 def chat_quantized(message,model):
-    result = model.generate(message)[0] # tokens
+    result = model.generate(message,
+        max_new_tokens=MAX_NEW_TOKENS, 
+        temperature=TEMPERATURE)[0] # tokens
     return model.tokenizer.decode(result)
 
 # 提取think内容并返回相关信息
