@@ -19,7 +19,7 @@ quant_config = QuantizeConfig(bits=4, group_size=128)
 model = GPTQModel.load(model_name, quant_config)
 
 # increase `batch_size` to match GPU/VRAM specs to speed up quantization
-model.quantize(calibration_dataset, batch_size=1)
+model.quantize(calibration_dataset, batch_size=8)
 
 model.save(quantized_model_dir)
 
