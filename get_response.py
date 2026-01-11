@@ -84,6 +84,60 @@ def chat(message, model, tokenizer):
     return tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
 
 
+def chat_batch(messages, model, tokenizer, num_responses):
+    """
+    Chat with pretrained model in batch mode.
+    
+    Args:
+        messages: Single message string to generate multiple responses for
+        model: The model to use
+        tokenizer: Tokenizer
+        num_responses: Number of responses to generate
+    
+    Returns:
+        List of response strings
+    """
+    # Prepare batch inputs - same message repeated num_responses times
+    chat_messages = [
+        [{"role": "user", "content": messages}]
+        for _ in range(num_responses)
+    ]
+    
+    # Tokenize all messages
+    inputs = tokenizer.apply_chat_template(
+        chat_messages[0],
+        add_generation_prompt=True,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt",
+    ).to(model.device)
+    
+    # Repeat inputs for batch processing
+    batch_inputs = {
+        "input_ids": inputs["input_ids"].repeat(num_responses, 1),
+        "attention_mask": inputs["attention_mask"].repeat(num_responses, 1)
+    }
+    
+    # Generate batch outputs
+    outputs = model.generate(
+        **batch_inputs,
+        max_new_tokens=MAX_NEW_TOKENS,
+        temperature=TEMPERATURE,
+        do_sample=True if TEMPERATURE > 0 else False,
+        pad_token_id=tokenizer.eos_token_id,
+        use_cache=True,
+    )
+    
+    # Decode all outputs
+    input_length = batch_inputs["input_ids"].shape[-1]
+    responses = [
+        tokenizer.decode(outputs[i][input_length:], skip_special_tokens=True)
+        for i in range(num_responses)
+    ]
+    
+    return responses
+
+
 def chat_quantized(message, model):
     """Chat with quantized model."""
     result = model.generate(
@@ -176,7 +230,7 @@ def setup_output_files(model_name, results_dir):
     return results_file, stats_file
 
 
-def run_inference(combined_dataset, model, results_file, use_quantized=True, tokenizer=None):
+def run_inference(combined_dataset, model, results_file, use_quantized=True, tokenizer=None, num_responses=20):
     """
     Run inference on combined dataset and save results.
     
@@ -186,6 +240,7 @@ def run_inference(combined_dataset, model, results_file, use_quantized=True, tok
         results_file: Path to save results
         use_quantized: Whether using quantized model
         tokenizer: Tokenizer (only needed for pretrained model)
+        num_responses: Number of responses to generate per problem (default: 20)
     
     Returns:
         tuple: (all_results, think_lengths, truncated_count)
@@ -195,7 +250,7 @@ def run_inference(combined_dataset, model, results_file, use_quantized=True, tok
     truncated_count = 0
     all_results = []
 
-    print(f"开始推理...\n")
+    print(f"开始推理... 每条数据将生成 {num_responses} 次response (使用batch处理)\n")
 
     with open(results_file, 'w', encoding='utf-8') as f:
         for item in tqdm(combined_dataset, desc="Processing"):
@@ -203,43 +258,47 @@ def run_inference(combined_dataset, model, results_file, use_quantized=True, tok
             source = item['source']
             answer = item['answer']
             
-            # Get response based on model type
+            # Generate multiple responses in batch for each problem
             if use_quantized:
-                response = chat_quantized(problem, model)
+                # Quantized model: generate one by one (no batch support)
+                responses = [chat_quantized(problem, model) for _ in range(num_responses)]
             else:
-                response = chat(problem, model, tokenizer)
-
-            total_count += 1
+                # Pretrained model: use batch generation
+                responses = chat_batch(problem, model, tokenizer, num_responses)
             
-            # Collect think info
-            think_info = extract_think_info(response)
-            think_lengths.append(think_info['length'])
-            
-            if think_info['is_truncated']:
-                truncated_count += 1
-            
-            # Prepare result item
-            result_item = {
-                'index': total_count,
-                'source': source,
-                'problem': problem,
-                'answer': answer,
-                'response': response,
-                'think_info': think_info,
-                'response_length': len(response),
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            # Save to file (one JSON object per line)
-            f.write(json.dumps(result_item, ensure_ascii=False) + '\n')
-            f.flush()
-            
-            all_results.append(result_item)
+            # Process all responses
+            for response_idx, response in enumerate(responses):
+                total_count += 1
+                
+                # Collect think info
+                think_info = extract_think_info(response)
+                think_lengths.append(think_info['length'])
+                
+                if think_info['is_truncated']:
+                    truncated_count += 1
+                
+                # Prepare result item
+                result_item = {
+                    'index': total_count,
+                    'response_idx': response_idx + 1,  # 1-indexed response number
+                    'source': source,
+                    'problem': problem,
+                    'answer': answer,
+                    'response': response,
+                    'think_info': think_info,
+                    'response_length': len(response),
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                # Save to file (one JSON object per line)
+                f.write(json.dumps(result_item, ensure_ascii=False) + '\n')
+                f.flush()
+                
+                all_results.append(result_item)
             
             print("-" * 50)
 
     return all_results, think_lengths, truncated_count
-
 
 def calculate_statistics(all_results, think_lengths, truncated_count):
     """Calculate statistics from inference results."""
@@ -343,7 +402,8 @@ def main():
         model, 
         results_file, 
         use_quantized=use_quantized, 
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        num_responses=20  # Generate 20 responses per problem
     )
     
     # Calculate and save statistics
