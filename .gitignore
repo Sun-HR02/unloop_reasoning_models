@@ -3,3 +3,5 @@ DeepSeek-R1-Distill-Qwen-1.5B
 quantized_model
 .DS_Store
 run.sh
+*.log
+gptqmodel_offload

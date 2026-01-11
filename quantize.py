@@ -1,7 +1,7 @@
 from datasets import load_dataset
 from gptqmodel import GPTQModel, QuantizeConfig
 
-model_name = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-32B'
+model_name = 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B'
 QUANTIZE_METHOD = 'gptq'
 
 pretrained_model_dir = model_name
